@@ -16,7 +16,7 @@ extern double MaxLots=4;
 
 extern double lotAmplifier = 2;
 extern bool debug = false;
-extern int magic = 222;
+extern int magic = 111;
 
 extern double Lots = 2.0;
 extern string symbols = "EURUSD,USDJPY,GBPJPY,USDCAD,NZDUSD,AUDUSD,GBPUSD";
@@ -31,13 +31,7 @@ int start(){
    for(int i=0;i<ArraySize(symbolArray);i++) {
       startTrade(symbolArray[i]);
    }
-   //startTrade(Symbol());
-   /*startTrade("EURUSD");
-   startTrade("USDJPY");
-   startTrade("GBPJPY");
-   startTrade("USDCAD");
-   startTrade("NZDUSD");
-   startTrade("AUDUSD");*/
+   
 }
 
 int startTrade(string curr){
