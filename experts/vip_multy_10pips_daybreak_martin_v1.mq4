@@ -71,24 +71,24 @@ int startTrade(string curr){
             double prevLotPrices = getPrevLotPrices(ordersNet);
             double lotSum = getLotSum(ordersNet, ordersNetLotNew);
             if(OrderType()==OP_BUY) {
-               breakeven = (OrderOpenPrice() - Point*15*mult(OrderSymbol()));
-               newTp = OrderOpenPrice() - Point*5*mult(OrderSymbol());
+               breakeven = (OrderOpenPrice() - MarketInfo(curr, MODE_POINT)*15*mult(OrderSymbol()));
+               newTp = OrderOpenPrice() - MarketInfo(curr, MODE_POINT)*5*mult(OrderSymbol());
             } else {
-               breakeven = (OrderOpenPrice() + Point*15*mult(OrderSymbol()));
-               newTp = OrderOpenPrice() + Point*5*mult(OrderSymbol());
+               breakeven = (OrderOpenPrice() + MarketInfo(curr, MODE_POINT)*15*mult(OrderSymbol()));
+               newTp = OrderOpenPrice() + MarketInfo(curr, MODE_POINT)*5*mult(OrderSymbol());
             }
             newPrice = (lotSum * breakeven - prevLotPrices)/ordersNetLotNew;
 
-            if(OrderType()==OP_BUY && Ask<=newPrice) {
-               OrderSend(OrderSymbol(),OrderType(),ordersNetLotNew,Ask,3,NULL,
+            if(OrderType()==OP_BUY && MarketInfo(curr, MODE_ASK)<=newPrice) {
+               OrderSend(OrderSymbol(),OrderType(),ordersNetLotNew,MarketInfo(curr, MODE_ASK),3,NULL,
                newTp, "vip_10pips_martin", magic, iTime( OrderSymbol(), PERIOD_D1, 0 ) + 86400, Green);
                modifyOrdersTP(newTp, curr);
             }
             if(debug){
                Print("newPrice: " + newPrice + ", breakeven: " + breakeven + ", newTp: " + newTp + ", ordersNetLotNew: " + ordersNetLotNew);
             }
-            if(OrderType()==OP_SELL && Bid>=newPrice) {
-               OrderSend(OrderSymbol(),OrderType(),ordersNetLotNew,Bid,3,NULL,
+            if(OrderType()==OP_SELL && MarketInfo(curr, MODE_BID)>=newPrice) {
+               OrderSend(OrderSymbol(),OrderType(),ordersNetLotNew,MarketInfo(curr, MODE_BID),3,NULL,
                newTp, "vip_10pips_martin", magic, iTime( OrderSymbol(), PERIOD_D1, 0 ) + 86400, Red);
                modifyOrdersTP(newTp, curr);
             }
@@ -156,18 +156,32 @@ void trade(string curr) {
       }
    }
 
-   double lastDayHight = iHigh(curr,PERIOD_D1,1);
-   double lastDayLow = iLow(curr,PERIOD_D1,1);
-   if(Ask < lastDayHight && MathAbs(lastDayHight-Ask)>(lastDayHight-lastDayLow)*0.2  && !hasBuyStop) {
+   double lastDayHight = NormalizeDouble(iHigh(curr,PERIOD_D1,1), MarketInfo(curr, MODE_DIGITS));
+   double lastDayLow = NormalizeDouble(iLow(curr,PERIOD_D1,1), MarketInfo(curr, MODE_DIGITS));
+   //Print(curr + " lastDayHight: " + lastDayHight);
+   //Print(curr + " lastDayLow: " + lastDayLow);
+   //if(Ask < lastDayHight && MathAbs(lastDayHight-Ask)>(lastDayHight-lastDayLow)*0.2  && !hasBuyStop) {
+   double stopLevel = MarketInfo(curr,MODE_STOPLEVEL);
+   if(MarketInfo(curr, MODE_ASK) < lastDayHight && !hasBuyStop) {
       drawLastDayRect(curr, lastDayHight, lastDayLow);
-      OrderSend(curr,OP_BUYSTOP,Lots,lastDayHight,3,NULL,lastDayHight+Point*10*mult(curr), "vip_10pips_martin", magic, iTime( curr, PERIOD_D1, 0 ) + 86400, Green);
-      Print(GetLastError());
+      double tp = NormalizeDouble(lastDayHight+MarketInfo(curr, MODE_POINT)*10*mult(curr), MarketInfo(curr, MODE_DIGITS));
+      if(OrderSend(curr,OP_BUYSTOP,Lots,lastDayHight,3,NULL,tp, "vip_10pips_martin", magic, iTime( curr, PERIOD_D1, 0 ) + 86400, Green) == -1){
+         Print(curr + " buy error: " + GetLastError());
+         Print(curr + " STOPLEVEL: " + stopLevel);
+         Print(curr + " tp: " + tp);
+         Print(curr + " lastDayHight: " + lastDayHight);
+         Print(curr + " lastDayLow: " + lastDayLow);
+      }
    }
 
-   if(Bid > lastDayLow && MathAbs(lastDayLow-Bid)>(lastDayLow-lastDayLow)*0.2 && !hasSellStop) {
+   //if(Bid > lastDayLow && MathAbs(lastDayLow-Bid)>(lastDayLow-lastDayLow)*0.2 && !hasSellStop) {
+   if(MarketInfo(curr, MODE_BID) > lastDayLow && !hasSellStop) {
       drawLastDayRect(curr, lastDayHight, lastDayLow);
-      OrderSend(curr,OP_SELLSTOP,Lots,lastDayLow,3,NULL,lastDayLow-Point*10*mult(curr), "vip_10pips_martin", magic, iTime( curr, PERIOD_D1, 0 ) + 86400, Red);
-      Print(GetLastError());
+      if(OrderSend(curr,OP_SELLSTOP,Lots,lastDayLow,3,NULL,lastDayLow-MarketInfo(curr, MODE_POINT)*10*mult(curr), "vip_10pips_martin", magic, iTime( curr, PERIOD_D1, 0 ) + 86400, Red) == -1){
+         Print(curr + " sell error: " + GetLastError());
+         Print(curr + " lastDayHight: " + lastDayHight);
+         Print(curr + " lastDayLow: " + lastDayLow);
+      }
    } 
 }
 
