@@ -23,12 +23,13 @@ bool deletePending = false;
 bool hasBuyStop = false;
 bool hasSellStop = false;
 bool stop = false;
+bool isReverseSymbol = false;
 
 
 extern double orderStopLevel = 0.1;
 int start(){
    if(stop) {
-      return(0);
+      //return(0);
    }
    string currentTradingSymbols[0];
    for(int k = OrdersTotal()-1;k>=0;k--) {
@@ -82,23 +83,22 @@ int startTrade(string curr, int orderType){
       }
    }
    
+   isReverseSymbol = false;
    string reverseSymbolsArray[];
-   bool isReverseSymbol = false;
    stringExplode(",", reverseSymbols, reverseSymbolsArray);
    for(int i=0;i<ArraySize(reverseSymbolsArray);i++) {
       if(curr == reverseSymbolsArray[i]) {
          isReverseSymbol = true;
       }
    }
-
    if(ArraySize(ordersNet) > reverseCount && ArraySize(reverseOrdersNet)==0 && isReverseSymbol && reverseEnabled) {
-       Print("ArraySize(ordersNet): " + ArraySize(ordersNet));
+      Print("ArraySize(ordersNet): " + ArraySize(ordersNet));
       Print("ArraySize(reverseOrdersNet): " + ArraySize(reverseOrdersNet));
       if(OrderSelect(getLastNetOrderTicket(ordersNet), SELECT_BY_TICKET)==true) {
          if(OrderType() == OP_BUY) {
             double stopLevel = MarketInfo(OrderSymbol(), MODE_STOPLEVEL) + MarketInfo(OrderSymbol(), MODE_SPREAD);
             double tpSell = NormalizeDouble(MarketInfo(OrderSymbol(), MODE_BID)-MarketInfo(OrderSymbol(), MODE_POINT)*10*mult(OrderSymbol()), MarketInfo(OrderSymbol(), MODE_DIGITS));
-            if(OrderSend(OrderSymbol(),OP_SELL,Lots,MarketInfo(OrderSymbol(), MODE_BID),3,NULL,tpSell, "nasos_reverse", magic) == -1) {
+            if(OrderSend(curr,OP_SELL,Lots,MarketInfo(OrderSymbol(), MODE_BID),3,NULL,tpSell, "nasos_reverse", magic) == -1) {
                Print("tpSell: " + tpSell);
                Print("BID: " + MarketInfo(OrderSymbol(), MODE_BID));
                Print("stopLevel: " + stopLevel);
