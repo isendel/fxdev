@@ -14,13 +14,22 @@ extern bool debug = false;
 extern int magic = 111;
 
 extern double Lots = 2.0;
-extern string symbols = "EURUSD";
+extern string symbols = "EURUSD,USDJPY,GBPJPY,USDCAD,NZDUSD,AUDUSD,GBPUSD,NZDCHF,EURGBP,EURCHF,USDCHF";
+extern string reverseSymbols = "EURUSD";
+extern bool reverseEnabled = false;
+extern int reverseCount = 2;
 
 bool deletePending = false;
 bool hasBuyStop = false;
 bool hasSellStop = false;
+bool stop = false;
 
+
+extern double orderStopLevel = 0.1;
 int start(){
+   if(stop) {
+      return(0);
+   }
    string currentTradingSymbols[0];
    for(int k = OrdersTotal()-1;k>=0;k--) {
       if(OrderSelect(k, SELECT_BY_POS) == true) {
@@ -72,21 +81,43 @@ int startTrade(string curr, int orderType){
          }
       }
    }
-   if(ArraySize(ordersNet) > 2 && ArraySize(reverseOrdersNet)==0) {
+   
+   string reverseSymbolsArray[];
+   bool isReverseSymbol = false;
+   stringExplode(",", reverseSymbols, reverseSymbolsArray);
+   for(int i=0;i<ArraySize(reverseSymbolsArray);i++) {
+      if(curr == reverseSymbolsArray[i]) {
+         isReverseSymbol = true;
+      }
+   }
+
+   if(ArraySize(ordersNet) > reverseCount && ArraySize(reverseOrdersNet)==0 && isReverseSymbol && reverseEnabled) {
+       Print("ArraySize(ordersNet): " + ArraySize(ordersNet));
+      Print("ArraySize(reverseOrdersNet): " + ArraySize(reverseOrdersNet));
       if(OrderSelect(getLastNetOrderTicket(ordersNet), SELECT_BY_TICKET)==true) {
          if(OrderType() == OP_BUY) {
-            OrderSend(OrderSymbol(),OP_SELL,Lots,MarketInfo(OrderSymbol(), MODE_BID),3,NULL,
-            NormalizeDouble(MarketInfo(OrderSymbol(), MODE_BID)+MarketInfo(OrderSymbol(), MODE_POINT)*10*mult(OrderSymbol()), MarketInfo(OrderSymbol(), MODE_DIGITS)), 
-            "nasos_reverse", magic);
+            double stopLevel = MarketInfo(OrderSymbol(), MODE_STOPLEVEL) + MarketInfo(OrderSymbol(), MODE_SPREAD);
+            double tpSell = NormalizeDouble(MarketInfo(OrderSymbol(), MODE_BID)-MarketInfo(OrderSymbol(), MODE_POINT)*10*mult(OrderSymbol()), MarketInfo(OrderSymbol(), MODE_DIGITS));
+            if(OrderSend(OrderSymbol(),OP_SELL,Lots,MarketInfo(OrderSymbol(), MODE_BID),3,NULL,tpSell, "nasos_reverse", magic) == -1) {
+               Print("tpSell: " + tpSell);
+               Print("BID: " + MarketInfo(OrderSymbol(), MODE_BID));
+               Print("stopLevel: " + stopLevel);
+               stop=true;
+            }
          }
          if(OrderType() == OP_SELL) {
-            OrderSend(curr,OP_BUYSTOP,Lots,MarketInfo(OrderSymbol(), MODE_ASK),3,NULL,
-            NormalizeDouble(MarketInfo(OrderSymbol(), MODE_ASK)+MarketInfo(OrderSymbol(), MODE_POINT)*10*mult(OrderSymbol()), MarketInfo(OrderSymbol(), MODE_DIGITS)), 
-            "nasos_reverse", magic);
+            double tpBuy = NormalizeDouble(MarketInfo(OrderSymbol(), MODE_ASK)+MarketInfo(OrderSymbol(), MODE_POINT)*10*mult(OrderSymbol()), MarketInfo(OrderSymbol(), MODE_DIGITS));
+            if(OrderSend(curr,OP_BUY,Lots,MarketInfo(OrderSymbol(), MODE_ASK),3,NULL,tpBuy, "nasos_reverse", magic)==-1) {
+               Print("tpBuy: " + tpBuy);
+               Print("ASK: " + MarketInfo(OrderSymbol(), MODE_ASK));
+               Print("stopLevel: " + stopLevel);
+               stop=true;
+            }
    
          }
       }
    }
+   
    if(deletePending) {
       deletePendingOrders(magic, curr);
    }
@@ -115,17 +146,25 @@ int startTrade(string curr, int orderType){
             newPrice = (lotSum * breakeven - prevLotPrices)/ordersNetLotNew;
 
             if(OrderType()==OP_BUY && MarketInfo(curr, MODE_ASK)<=newPrice) {
-               OrderSend(OrderSymbol(),OrderType(),ordersNetLotNew,MarketInfo(curr, MODE_ASK),3,NULL,
-               newTp, "nasos_martin", magic);
-               modifyOrdersTP(newTp, curr);
+               if(OrderSend(OrderSymbol(),OrderType(),ordersNetLotNew,MarketInfo(curr, MODE_ASK),3,NULL,
+               newTp, "nasos_martin", magic) == -1){
+                  Print("Error");
+                  stop = true;
+               } else {
+                  modifyOrdersTP(newTp, curr);
+               }
             }
             if(debug){
                Print("newPrice: " + newPrice + ", breakeven: " + breakeven + ", newTp: " + newTp + ", ordersNetLotNew: " + ordersNetLotNew);
             }
             if(OrderType()==OP_SELL && MarketInfo(curr, MODE_BID)>=newPrice) {
-               OrderSend(OrderSymbol(),OrderType(),ordersNetLotNew,MarketInfo(curr, MODE_BID),3,NULL,
-               newTp, "nasos_martin", magic);
-               modifyOrdersTP(newTp, curr);
+               if(OrderSend(OrderSymbol(),OrderType(),ordersNetLotNew,MarketInfo(curr, MODE_BID),3,NULL,
+               newTp, "nasos_martin", magic)==-1){
+                  Print("Error");
+                  stop = true;
+               } else {
+                  modifyOrdersTP(newTp, curr);
+               }
             }
          } else {
             Print("Failed fint order by ticket: " + ordersNet[netSize-1]);
@@ -136,9 +175,7 @@ int startTrade(string curr, int orderType){
       }
    }
   
-   //ArrayResize(ordersNet, 0);
-   
-   //trade(curr);
+
 //----
    return(0);
   }
@@ -171,15 +208,14 @@ void trade(string curr) {
    if(debug) {
       Print("Trading " + curr + " symbol.");
    }
-   int historyTotal = HistoryTotal();
-   if (OrderSelect(historyTotal -1, SELECT_BY_POS, MODE_HISTORY)) {
-      int c_time = CurTime();   
-      datetime day_start;
-      day_start=c_time-TimeHour(c_time)*60*60-TimeMinute(c_time)*60-TimeSeconds(c_time);
-      if (Hour()<=3) {
-         return;
+   for(int k = OrdersTotal()-1;k>=0;k--) {
+      if(OrderSelect(k, SELECT_BY_POS) == true) {
+         if(OrderSymbol()==curr && OrderMagicNumber() == magic && (OrderType()==OP_SELL || OrderType() == OP_BUY)) {
+            return;
+         }
       }
    }
+
    hasBuyStop = false;
    hasSellStop = false;
    int total = OrdersTotal();
@@ -206,25 +242,31 @@ void trade(string curr) {
    double lastDayLow = NormalizeDouble(iLow(curr,PERIOD_D1,1), MarketInfo(curr, MODE_DIGITS));
    //Print(curr + " lastDayHight: " + lastDayHight);
    //Print(curr + " lastDayLow: " + lastDayLow);
-   //if(Ask < lastDayHight && MathAbs(lastDayHight-Ask)>(lastDayHight-lastDayLow)*0.2  && !hasBuyStop) {
+   double tp;
    double stopLevel = MarketInfo(curr,MODE_STOPLEVEL);
-   if(MarketInfo(curr, MODE_ASK) < lastDayHight && !hasBuyStop) {
-      drawLastDayRect(curr, lastDayHight, lastDayLow);
-      double tp = NormalizeDouble(lastDayHight+MarketInfo(curr, MODE_POINT)*10*mult(curr), MarketInfo(curr, MODE_DIGITS));
-      if(OrderSend(curr,OP_BUYSTOP,Lots,lastDayHight,3,NULL,tp, "nasos", magic, iTime( curr, PERIOD_D1, 0 ) + 86400) == -1){
+   if(MarketInfo(curr, MODE_ASK) < lastDayHight && MathAbs(lastDayHight-MarketInfo(curr, MODE_ASK))>(lastDayHight-lastDayLow)*orderStopLevel  && !hasBuyStop) {
+   //if(MarketInfo(curr, MODE_ASK) < lastDayHight && !hasBuyStop) {
+      tp = NormalizeDouble(lastDayHight+MarketInfo(curr, MODE_POINT)*10*mult(curr), MarketInfo(curr, MODE_DIGITS));
+      if(OrderSend(curr,OP_BUYSTOP,Lots,lastDayHight,3,NULL,tp, "vip_10pips_martin", magic, iTime( curr, PERIOD_D1, 0 ) + 86400) == -1){
          Print(curr + " buy error: " + GetLastError());
          Print(curr + " STOPLEVEL: " + stopLevel);
          Print(curr + " tp: " + tp);
+         Print(curr + " MarketInfo(curr, MODE_DIGITS) " + MarketInfo(curr, MODE_DIGITS));
+         Print(curr + " MarketInfo(curr, MODE_POINT) " + MarketInfo(curr, MODE_POINT));
          Print(curr + " lastDayHight: " + lastDayHight);
          Print(curr + " lastDayLow: " + lastDayLow);
       }
    }
 
-   //if(Bid > lastDayLow && MathAbs(lastDayLow-Bid)>(lastDayLow-lastDayLow)*0.2 && !hasSellStop) {
-   if(MarketInfo(curr, MODE_BID) > lastDayLow && !hasSellStop) {
-      drawLastDayRect(curr, lastDayHight, lastDayLow);
-      if(OrderSend(curr,OP_SELLSTOP,Lots,lastDayLow,3,NULL,lastDayLow-MarketInfo(curr, MODE_POINT)*10*mult(curr), "nasos", magic, iTime( curr, PERIOD_D1, 0 ) + 86400) == -1){
-         Print(curr + " sell error: " + GetLastError());
+   if(MarketInfo(curr, MODE_BID) > lastDayLow && MathAbs(lastDayLow-MarketInfo(curr, MODE_BID))>(lastDayLow-lastDayLow)*orderStopLevel && !hasSellStop) {
+   //if(MarketInfo(curr, MODE_BID) > lastDayLow && !hasSellStop) {
+      tp = NormalizeDouble(lastDayLow-MarketInfo(curr, MODE_POINT)*10*mult(curr), MarketInfo(curr, MODE_DIGITS));
+      if(OrderSend(curr,OP_SELLSTOP,Lots,lastDayLow,3,NULL,tp, "vip_10pips_martin", magic, iTime( curr, PERIOD_D1, 0 ) + 86400) == -1){
+         Print(curr + " buy error: " + GetLastError());
+         Print(curr + " STOPLEVEL: " + stopLevel);
+         Print(curr + " tp: " + tp);
+         Print(curr + " MarketInfo(curr, MODE_DIGITS) " + MarketInfo(curr, MODE_DIGITS));
+         Print(curr + " MarketInfo(curr, MODE_POINT) " + MarketInfo(curr, MODE_POINT));
          Print(curr + " lastDayHight: " + lastDayHight);
          Print(curr + " lastDayLow: " + lastDayLow);
       }
@@ -232,14 +274,6 @@ void trade(string curr) {
 }
 
 
-void drawLastDayRect(string curr, double lastDayHight, double lastDayLow){
-   string time = iTime(curr,PERIOD_M1,0);
-   string labelRect = curr + "_lastDay_" + time;
-   ObjectCreate(labelRect, OBJ_RECTANGLE, 0, iTime(curr,PERIOD_D1,1), lastDayHight, iTime(curr,PERIOD_D1,0), lastDayLow);
-   ObjectSet(labelRect, OBJPROP_STYLE, STYLE_DASHDOTDOT);
-   ObjectSet(labelRect, OBJPROP_COLOR, MidnightBlue);
-   ObjectSet(labelRect, OBJPROP_WIDTH, 4);
-}
 
 int getLastNetOrderTicket(int orders[]) {
    return (orders[ArraySize(orders)-1]);
