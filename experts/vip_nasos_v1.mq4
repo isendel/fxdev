@@ -16,7 +16,8 @@ extern int magic = 111;
 extern double Lots = 2.0;
 extern string symbols = "EURUSD,USDJPY,GBPJPY,USDCAD,NZDUSD,AUDUSD,GBPUSD,NZDCHF,EURGBP,EURCHF,USDCHF";
 extern string reverseSymbols = "EURUSD";
-extern bool reverseEnabled = false;
+extern bool reverseEnabled = true;
+extern bool reverseAll = true;
 extern int reverseCount = 2;
 
 bool deletePending = false;
@@ -45,7 +46,7 @@ int start(){
    
    for(int o=0;o<ArraySize(currentTradingSymbols);o++) {
       startTrade(currentTradingSymbols[o], OP_BUY);
-      startTrade(currentTradingSymbols[o], OP_SELL);
+      //startTrade(currentTradingSymbols[o], OP_SELL);
    }
  
 
@@ -84,16 +85,18 @@ int startTrade(string curr, int orderType){
    }
    
    isReverseSymbol = false;
-   string reverseSymbolsArray[];
-   stringExplode(",", reverseSymbols, reverseSymbolsArray);
-   for(int i=0;i<ArraySize(reverseSymbolsArray);i++) {
-      if(curr == reverseSymbolsArray[i]) {
-         isReverseSymbol = true;
+   if(reverseAll) {
+      isReverseSymbol = true; 
+   } else {
+      string reverseSymbolsArray[];
+      stringExplode(",", reverseSymbols, reverseSymbolsArray);
+      for(int i=0;i<ArraySize(reverseSymbolsArray);i++) {
+         if(curr == reverseSymbolsArray[i]) {
+            isReverseSymbol = true;
+         }
       }
    }
    if(ArraySize(ordersNet) > reverseCount && ArraySize(reverseOrdersNet)==0 && isReverseSymbol && reverseEnabled) {
-      Print("ArraySize(ordersNet): " + ArraySize(ordersNet));
-      Print("ArraySize(reverseOrdersNet): " + ArraySize(reverseOrdersNet));
       if(OrderSelect(getLastNetOrderTicket(ordersNet), SELECT_BY_TICKET)==true) {
          if(OrderType() == OP_BUY) {
             double stopLevel = MarketInfo(OrderSymbol(), MODE_STOPLEVEL) + MarketInfo(OrderSymbol(), MODE_SPREAD);
@@ -123,6 +126,15 @@ int startTrade(string curr, int orderType){
    }
 
    
+   martinTrack(curr, ordersNet);
+   martinTrack(curr, reverseOrdersNet);
+  
+
+//----
+   return(0);
+  }
+
+void martinTrack(string curr, int ordersNet[]) {
    if(ArraySize(ordersNet) != 0) { 
       int netSize = 9;
       int size = ArraySize(ordersNet);
@@ -131,9 +143,10 @@ int startTrade(string curr, int orderType){
          if(OrderSelect(getLastNetOrderTicket(ordersNet), SELECT_BY_TICKET)==true) {
             double newTp,newPrice,breakeven;
             double ordersNetLotNew = Lots;
-            for(int o=0;o<size;o++) {
-               ordersNetLotNew = ordersNetLotNew*lotAmplifier;
-            }
+            ordersNetLotNew = OrderLots()*lotAmplifier;
+            //for(int o=0;o<size;o++) {
+              // ordersNetLotNew = ordersNetLotNew*lotAmplifier;
+            //}
             double prevLotPrices = getPrevLotPrices(ordersNet);
             double lotSum = getLotSum(ordersNet, ordersNetLotNew);
             if(OrderType()==OP_BUY) {
@@ -146,8 +159,7 @@ int startTrade(string curr, int orderType){
             newPrice = (lotSum * breakeven - prevLotPrices)/ordersNetLotNew;
 
             if(OrderType()==OP_BUY && MarketInfo(curr, MODE_ASK)<=newPrice) {
-               if(OrderSend(OrderSymbol(),OrderType(),ordersNetLotNew,MarketInfo(curr, MODE_ASK),3,NULL,
-               newTp, "nasos_martin", magic) == -1){
+               if(OrderSend(OrderSymbol(),OrderType(),ordersNetLotNew,MarketInfo(curr, MODE_ASK),3,NULL, newTp, "nasos_martin", magic) == -1){
                   Print("Error");
                   stop = true;
                } else {
@@ -158,8 +170,7 @@ int startTrade(string curr, int orderType){
                Print("newPrice: " + newPrice + ", breakeven: " + breakeven + ", newTp: " + newTp + ", ordersNetLotNew: " + ordersNetLotNew);
             }
             if(OrderType()==OP_SELL && MarketInfo(curr, MODE_BID)>=newPrice) {
-               if(OrderSend(OrderSymbol(),OrderType(),ordersNetLotNew,MarketInfo(curr, MODE_BID),3,NULL,
-               newTp, "nasos_martin", magic)==-1){
+               if(OrderSend(OrderSymbol(),OrderType(),ordersNetLotNew,MarketInfo(curr, MODE_BID),3,NULL,newTp, "nasos_martin", magic)==-1){
                   Print("Error");
                   stop = true;
                } else {
@@ -174,12 +185,9 @@ int startTrade(string curr, int orderType){
          return(0);
       }
    }
-  
+}
 
-//----
-   return(0);
-  }
-//+------------------------------------------------------------------+
+
 
 int getReverseOrderType(int orderType) {
    if(orderType == OP_SELL){
@@ -247,7 +255,7 @@ void trade(string curr) {
    if(MarketInfo(curr, MODE_ASK) < lastDayHight && MathAbs(lastDayHight-MarketInfo(curr, MODE_ASK))>(lastDayHight-lastDayLow)*orderStopLevel  && !hasBuyStop) {
    //if(MarketInfo(curr, MODE_ASK) < lastDayHight && !hasBuyStop) {
       tp = NormalizeDouble(lastDayHight+MarketInfo(curr, MODE_POINT)*10*mult(curr), MarketInfo(curr, MODE_DIGITS));
-      if(OrderSend(curr,OP_BUYSTOP,Lots,lastDayHight,3,NULL,tp, "vip_10pips_martin", magic, iTime( curr, PERIOD_D1, 0 ) + 86400) == -1){
+      if(OrderSend(curr,OP_BUYSTOP,Lots,lastDayHight,3,NULL,tp, "nasos_pending", magic, iTime( curr, PERIOD_D1, 0 ) + 86400) == -1){
          Print(curr + " buy error: " + GetLastError());
          Print(curr + " STOPLEVEL: " + stopLevel);
          Print(curr + " tp: " + tp);
@@ -261,7 +269,7 @@ void trade(string curr) {
    if(MarketInfo(curr, MODE_BID) > lastDayLow && MathAbs(lastDayLow-MarketInfo(curr, MODE_BID))>(lastDayLow-lastDayLow)*orderStopLevel && !hasSellStop) {
    //if(MarketInfo(curr, MODE_BID) > lastDayLow && !hasSellStop) {
       tp = NormalizeDouble(lastDayLow-MarketInfo(curr, MODE_POINT)*10*mult(curr), MarketInfo(curr, MODE_DIGITS));
-      if(OrderSend(curr,OP_SELLSTOP,Lots,lastDayLow,3,NULL,tp, "vip_10pips_martin", magic, iTime( curr, PERIOD_D1, 0 ) + 86400) == -1){
+      if(OrderSend(curr,OP_SELLSTOP,Lots,lastDayLow,3,NULL,tp, "nasos_pending", magic, iTime( curr, PERIOD_D1, 0 ) + 86400) == -1){
          Print(curr + " buy error: " + GetLastError());
          Print(curr + " STOPLEVEL: " + stopLevel);
          Print(curr + " tp: " + tp);
